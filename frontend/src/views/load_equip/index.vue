@@ -63,6 +63,69 @@
       </tbody>
     </table>
 
+    <section class="standby-block">
+      <h3 class="block-title">
+        特种车辆替班清单
+        <span class="block-sub">与特种车辆维保视图同源同步：维保中车辆需要同型别待命车顶班，先锁定车辆为准</span>
+      </h3>
+
+      <div v-if="!standbyRows.length" class="standby-empty">
+        当前没有维保中的特种车辆，暂不需要安排替班
+      </div>
+
+      <table v-else class="data-table standby-table">
+        <thead>
+          <tr>
+            <th>维保车辆编号</th>
+            <th>车辆类型</th>
+            <th>品牌型号</th>
+            <th>进厂维保时间</th>
+            <th>替班车辆</th>
+            <th>替班操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in standbyRows" :key="item.record.id">
+            <td>{{ item.record.vehicleNo }}</td>
+            <td>{{ item.record.vehicleType }}</td>
+            <td>{{ item.record.vehicleModel || '—' }}</td>
+            <td>{{ item.record.startDate }}</td>
+            <td>
+              <template v-if="item.substitute">
+                <span class="state-pill 出车中">{{ item.substitute['车辆编号'] }}</span>
+                <span class="cell-sub">已锁定为出车中，维保完成自动归队</span>
+              </template>
+              <span v-else class="cell-sub">待安排</span>
+            </td>
+            <td class="row-actions">
+              <template v-if="!item.substitute">
+                <select
+                  :value="''"
+                  class="standby-select"
+                  :disabled="!item.candidates.length || busyKey === item.record.vehicleId"
+                  @change="onPickSubstitute(item.record.vehicleId, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="" disabled>{{ item.candidates.length ? '选择待命车顶班' : '无同型别待命车' }}</option>
+                  <option v-for="candidate in item.candidates" :key="candidate.id" :value="candidate.id">
+                    {{ candidate['车辆编号'] }} · {{ candidate['品牌型号'] }}
+                  </option>
+                </select>
+              </template>
+              <button
+                v-else
+                class="link"
+                :disabled="busyKey === item.record.vehicleId"
+                type="button"
+                @click="onRecallSubstitute(item.record.vehicleId)"
+              >
+                召回替班
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条装卸设备记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -71,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import {
   downloadEntries,
@@ -79,6 +142,8 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { assignSubstitute, recallSubstitute } from '@/api/vehicle-service'
+import { listRows, loadMaintenance } from '@/data/local-store'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('load_equip')
@@ -92,12 +157,74 @@ const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const busyKey = ref<number | null>(null)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+
+// 替班清单：特种车辆里「维保中」且有进行中维保单的车；候选替班为同型别、当前待命、未被别的维保占用。
+const vehicles = ref<EntryRow[]>([])
+
+const standbyRows = computed(() => {
+  const openRecords = loadMaintenance().filter((item) => item.status === '维保中')
+  const occupiedIds = new Set(
+    openRecords.map((item) => item.substituteVehicleId).filter((id): id is number => id !== null),
+  )
+  return openRecords.map((record) => {
+    const substitute =
+      record.substituteVehicleId !== null
+        ? vehicles.value.find((row) => Number(row.id) === record.substituteVehicleId)
+        : undefined
+    const candidates = vehicles.value.filter(
+      (row) =>
+        String(row.status) === '待命' &&
+        String(row['车辆类型']) === record.vehicleType &&
+        !occupiedIds.has(Number(row.id)),
+    )
+    return { record, substitute, candidates }
+  })
+})
+
+function refreshRelations() {
+  vehicles.value = listRows('special_vehicle')
+}
+
+function onPickSubstitute(vehicleId: number, rawId: string) {
+  const substituteId = Number(rawId)
+  if (!substituteId) {
+    return
+  }
+  errorMessage.value = ''
+  busyKey.value = vehicleId
+  try {
+    const result = assignSubstitute(vehicleId, substituteId)
+    if (!result.ok) {
+      errorMessage.value = result.message
+      return
+    }
+    reload()
+  } finally {
+    busyKey.value = null
+  }
+}
+
+function onRecallSubstitute(vehicleId: number) {
+  errorMessage.value = ''
+  busyKey.value = vehicleId
+  try {
+    const result = recallSubstitute(vehicleId)
+    if (!result.ok) {
+      errorMessage.value = result.message
+      return
+    }
+    reload()
+  } finally {
+    busyKey.value = null
+  }
+}
 
 function resetFilters() {
   filters.value = {}
@@ -128,10 +255,25 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    refreshRelations()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '装卸设备列表读取失败'
   }
 }
 
-onMounted(reload)
+// 替班清单与特种车辆页共用同一份本地数据，其它标签页锁定/召回后这里即时刷新。
+function onStorage(event: StorageEvent) {
+  if (event.key && event.key.startsWith('airport-ground-handling:')) {
+    reload()
+  }
+}
+
+onMounted(() => {
+  reload()
+  window.addEventListener('storage', onStorage)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('storage', onStorage)
+})
 </script>

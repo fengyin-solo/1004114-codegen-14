@@ -36,3 +36,18 @@ export type OverviewResult = {
   cards: { label: string; value: number }[]
   modules: { name: string; created: number; pending: number; abnormal: number }[]
 }
+
+// 维保单是车辆台账之外的独立流水：历史单保留提交时的维保周期快照，之后改周期不回写历史。
+export type MaintenanceRecord = {
+  id: number
+  vehicleId: number
+  vehicleNo: string
+  vehicleType: string
+  vehicleModel: string
+  cycleSnapshot: string
+  submittedAt: string
+  startDate: string
+  completedAt: string
+  status: '维保中' | '已完成'
+  substituteVehicleId: number | null
+}
