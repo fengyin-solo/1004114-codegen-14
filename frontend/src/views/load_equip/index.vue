@@ -43,7 +43,7 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in columns" :key="column">{{ row[column] || '—' }}</td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
@@ -63,6 +63,36 @@
       </tbody>
     </table>
 
+    <h3 class="section-title">替班清单（同步特种车辆维保）</h3>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>车辆编号</th>
+          <th>车辆类型</th>
+          <th>替班设备</th>
+          <th>设备类型</th>
+          <th>开始时间</th>
+          <th>结束时间</th>
+          <th>清单状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="record in substitutes" :key="String(record.id)">
+          <td>{{ record['车辆编号'] }}</td>
+          <td>{{ record['车辆类型'] || '—' }}</td>
+          <td>{{ record['设备编号'] }}</td>
+          <td>{{ record['设备类型'] || '—' }}</td>
+          <td>{{ record['开始时间'] }}</td>
+          <td>{{ record['结束时间'] || '—' }}</td>
+          <td>{{ record.status }}</td>
+        </tr>
+        <tr v-if="!substitutes.length">
+          <td colspan="7" class="empty-state">暂无替班记录，特种车辆安排维保后自动同步到这里</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="view-note">特种车辆锁进维保后自动指派待机设备替班，台账「替班对象」列与本清单同步更新。</p>
+
     <footer class="page-foot">
       <span>共 {{ total }} 条装卸设备记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
@@ -76,18 +106,20 @@ import { computed, onMounted, ref } from 'vue'
 import {
   downloadEntries,
   listEntries,
+  listSubstitutes,
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('load_equip')
-const columns = ["设备编号", "设备类型", "适用机型", "最大载重", "安装位置", "购入日期", "维保记录", "设备状态"]
+const columns = ["设备编号", "设备类型", "适用机型", "最大载重", "安装位置", "购入日期", "维保记录", "设备状态", "替班对象"]
 const actions = ["启用设备", "安排维保", "申请报修"]
 const statuses = ["待机", "运行中", "维保中", "已报修"]
 const stats = [{"label": "运行中设备", "value": 0}, {"label": "维保中设备", "value": 0}, {"label": "报修设备", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
+const substitutes = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
@@ -128,6 +160,7 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    substitutes.value = listSubstitutes()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '装卸设备列表读取失败'
   }

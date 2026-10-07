@@ -35,3 +35,12 @@ body { margin: 0; background: #f6f8fb; color: #1f2937; }
 .error-text { color: #b42318; }
 .status-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
 .legend-item { background: #eef2f7; border-radius: 999px; padding: 2px 10px; }
+.view-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+.switch-item { border: none; background: #fff; padding: 6px 16px; cursor: pointer; font-size: 13px; color: #1f2937; }
+.switch-item.active { background: var(--brand); color: #fff; }
+.tab-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.tab-item { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 4px 14px; cursor: pointer; font-size: 13px; }
+.tab-item.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.section-title { font-size: 14px; margin: 16px 0 8px; }
+.view-note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.muted { color: var(--muted); font-size: 12px; }
